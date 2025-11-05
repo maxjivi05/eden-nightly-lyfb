@@ -94,4 +94,4 @@
 -    InputCommon::InputSubsystem input_subsystem;
      auto window =
              std::make_unique<EmuWindow_Android>(ANativeWindow_fromSurface(env, j_surf), driver_library);
- 
+  
