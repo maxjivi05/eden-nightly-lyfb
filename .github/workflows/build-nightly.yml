@@ -13,9 +13,9 @@ on:
 jobs:
   android:
     runs-on: ubuntu-latest
-    name: "Android (Lyfb)"
+    name: "Android (Lyb)"
     env:
-      TARGET: Lyfb
+      TARGET: Lyb
       CCACHE_DIR: ${{ github.workspace }}/.ccache
       CCACHE_COMPILERCHECK: content
       CCACHE_SLOPPINESS: time_macros
@@ -35,7 +35,7 @@ jobs:
       - name: Apply Android Patch
         working-directory: ./eden
         run: |
-          git apply ${{ github.workspace }}/.github/patches/android-fix.patch
+          git apply ${{ github.workspace }}/.github/patches/0001-load-system-driver-directly.patch
           echo "Android patch applied successfully."
 
       - name: Restore ccache
