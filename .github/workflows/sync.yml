@@ -1,0 +1,32 @@
+name: Sync Fork
+
+on:
+  schedule:
+    # Runs automatically every 6 hours
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+    # Allows you to run this manually from the Actions tab
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync fork with upstream repository
+        uses: aormsby/fork-sync-with-upstream-action@v3.4
+        with:
+          # The Personal Access Token (PAT) you created
+          token: ${{ secrets.PAT }}
+          
+          # The repository you are syncing FROM
+          upstream_repository: pflyly/eden-nightly
+          upstream_branch: main
+          
+          # The branch in THIS repository you are syncing TO
+          target_branch: main
+          
+          # Force a sync even if there are merge conflicts (overwrites local changes)
+          force: true
+          
+          # Files to protect from being overwritten by the sync
+          ignore_files: |
+            README.md
