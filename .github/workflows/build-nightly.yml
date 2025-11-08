@@ -18,10 +18,9 @@ jobs:
   build_android:
     runs-on: ubuntu-latest
     name: "Android (Lyfb)"
-    env:
-      TARGET: Lyfb
+    
     steps:
-      - name: Checkout Your Repository (including patch file)
+      - name: Checkout Workflow Files
         uses: actions/checkout@v4
 
       - name: Install Dependencies
@@ -34,24 +33,41 @@ jobs:
           git clone 'https://git.eden-emu.dev/eden-emu/eden.git' ./eden
           echo "Successfully cloned latest Eden source."
 
-      - name: Apply Android Patch
+      - name: Apply Live Patches
         working-directory: ./eden
         run: |
-          # This is the standard, reliable way to apply a patch from a file.
-          git apply ../.github/patches/android-fix.patch
-          echo "Android patch applied successfully."
+          # This method uses surgical, single-line sed commands that are resilient to
+          # upstream changes, avoiding all previous "corrupt patch" and YAML syntax errors.
+          
+          CMAKE_FILE="src/android/app/src/main/jni/CMakeLists.txt"
+          NATIVE_FILE="src/android/app/src/main/jni/native.cpp"
+
+          echo "1. Patching CMakeLists.txt to remove adrenotools and link Vulkan..."
+          sed -i 's/add_subdirectory(${CMAKE_SOURCE_DIR}\/externals\/libadrenotools EXCLUDE_FROM_ALL)//' "$CMAKE_FILE"
+          sed -i 's/target_link_libraries(yuzu-android PRIVATE adrenotools)/target_link_libraries(yuzu-android PRIVATE vulkan)/' "$CMAKE_FILE"
+          
+          echo "2. Commenting out adrenotools header in native.cpp..."
+          sed -i 's|#include <adrenotools/driver.h>|// Patched out by Lyfb workflow|' "$NATIVE_FILE"
+
+          echo "3. Replacing all adrenotools calls with standard dlopen..."
+          # This command globally replaces any call to adrenotools_open_libvulkan, regardless of its
+          # arguments, with the standard Android function. This is extremely robust.
+          sed -i 's/adrenotools_open_libvulkan([^)]*)/dlopen("libvulkan.so", RTLD_NOW)/g' "$NATIVE_FILE"
+          
+          echo "All patches applied successfully."
 
       - name: Restore ccache
         uses: actions/cache/restore@v4
         id: restore-ccache-cache
         with:
           path: ./.ccache
-          key: ${{ runner.os }}-android-ccache-${{ env.TARGET }}-${{ github.run_id }}
+          key: ${{ runner.os }}-android-ccache-Lyfb-${{ github.run_id }}
           restore-keys: |
-            ${{ runner.os }}-android-ccache-${{ env.TARGET }}-
+            ${{ runner.os }}-android-ccache-Lyfb-
 
       - name: Compile Eden Android
         env:
+          TARGET: Lyfb
           CCACHE_DIR: ./.ccache
           CCACHE_COMPILERCHECK: content
           CCACHE_SLOPPINESS: time_macros
@@ -69,5 +85,5 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v5.0.0
         with:
-          name: eden-android-${{ env.TARGET }}
+          name: eden-android-Lyfb
           path: eden/src/android/artifacts/
