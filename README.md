@@ -1,5 +1,7 @@
 # Unofficial Eden "Lyb" Nightly Build
 
+[![Build Lybxlpsv Version](https://github.com/maxjivi05/Eden-8-Elite-Lyb/actions/workflows/build-nightly.yml/badge.svg)](https://github.com/maxjivi05/Eden-8-Elite-Lyb/actions/workflows/build-nightly.yml)
+
 <a href="https://discord.gg/jM2z3B2XNv">Join our Discord Community!</a>
 
 ### Release Overview
