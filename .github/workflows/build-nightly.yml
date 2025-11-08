@@ -6,7 +6,7 @@ concurrency:
 
 on:
   schedule:
-    # Runs automatically every 6 hours. You can change this cron schedule.
+    # Runs automatically every 6 hours.
     - cron: '0 */6 * * *'
   workflow_dispatch:
     # Allows you to run this manually from the Actions tab.
@@ -48,13 +48,50 @@ jobs:
           sed -i 's|#include <adrenotools/driver.h>|// Patched by Lyfb: #include <adrenotools/driver.h>|' "$NATIVE_FILE"
 
           echo "3. Replacing InitializeGpuDriver function..."
-          sed -i '/void EmulationSession::InitializeGpuDriver/,/m_vulkan_library = std::make_shared<Common::DynamicLibrary>(handle);/c\void EmulationSession::InitializeGpuDriver(const std::string&, const std::string&, const std::string&, const std::string&) {\n#ifdef ARCHITECTURE_arm64\n    void* handle{};\n    handle = dlopen("libvulkan.so", RTLD_NOW);\n    if (!handle) handle = dlopen("libvulkan.so.1", RTLD_NOW);\n    m_vulkan_library = std::make_shared<Common::DynamicLibrary>(handle);\n#endif' "$NATIVE_FILE"
+          sed -i '/void EmulationSession::InitializeGpuDriver/,/^\s*}/c\
+          void EmulationSession::InitializeGpuDriver(const std::string&, const std::string&, const std::string&, const std::string&) {\
+          #ifdef ARCHITECTURE_arm64\
+              void* handle{};\
+              handle = dlopen("libvulkan.so", RTLD_NOW);\
+              if (!handle) handle = dlopen("libvulkan.so.1", RTLD_NOW);\
+              m_vulkan_library = std::make_shared<Common::DynamicLibrary>(handle);\
+          #endif\
+          }' "$NATIVE_FILE"
 
           echo "4. Replacing getSystemDriverInfo function..."
-          sed -i '/jobjectArray Java_org_yuzu_yuzu_1emu_utils_GpuDriverHelper_getSystemDriverInfo/,/return j_driver_info;/c\jobjectArray Java_org_yuzu_yuzu_1emu_utils_GpuDriverHelper_getSystemDriverInfo(\n    JNIEnv* env, jobject j_obj, jobject j_surf, jstring) {\n    void* handle = dlopen("libvulkan.so", RTLD_NOW);\n    if (!handle) handle = dlopen("libvulkan.so.1", RTLD_NOW);\n    auto driver_library = std::make_shared<Common::DynamicLibrary>(handle);\n    auto window = std::make_unique<EmuWindow_Android>(ANativeWindow_fromSurface(env, j_surf), driver_library);\n    Vulkan::vk::InstanceDispatch dld;\n    Vulkan::vk::Instance vk_instance = Vulkan::CreateInstance(*driver_library, dld, VK_API_VERSION_1_1, Core::Frontend::WindowSystemType::Android);\n    auto surface = Vulkan::CreateSurface(vk_instance, window->GetWindowInfo());\n    auto device = Vulkan::CreateDevice(vk_instance, dld, *surface);\n    auto driver_version = device.GetDriverVersion();\n    auto version_string = fmt::format("{}.{}.{}", VK_API_VERSION_MAJOR(driver_version), VK_API_VERSION_MINOR(driver_version), VK_API_VERSION_PATCH(driver_version));\n    jobjectArray j_driver_info = env->NewObjectArray(2, Common::Android::GetStringClass(), Common::Android::ToJString(env, version_string));\n    env->SetObjectArrayElement(j_driver_info, 1, Common::Android::ToJString(env, device.GetDriverName()));\n    return j_driver_info;' "$NATIVE_FILE"
+          sed -i '/jobjectArray Java_org_yuzu_yuzu_1emu_utils_GpuDriverHelper_getSystemDriverInfo/,/^\s*}/c\
+          jobjectArray Java_org_yuzu_yuzu_1emu_utils_GpuDriverHelper_getSystemDriverInfo(\
+              JNIEnv* env, jobject j_obj, jobject j_surf, jstring) {\
+              void* handle = dlopen("libvulkan.so", RTLD_NOW);\
+              if (!handle) handle = dlopen("libvulkan.so.1", RTLD_NOW);\
+              auto driver_library = std::make_shared<Common::DynamicLibrary>(handle);\
+              auto window = std::make_unique<EmuWindow_Android>(ANativeWindow_fromSurface(env, j_surf), driver_library);\
+              Vulkan::vk::InstanceDispatch dld;\
+              Vulkan::vk::Instance vk_instance = Vulkan::CreateInstance(*driver_library, dld, VK_API_VERSION_1_1, Core::Frontend::WindowSystemType::Android);\
+              auto surface = Vulkan::CreateSurface(vk_instance, window->GetWindowInfo());\
+              auto device = Vulkan::CreateDevice(vk_instance, dld, *surface);\
+              auto driver_version = device.GetDriverVersion();\
+              auto version_string = fmt::format("{}.{}.{}", VK_API_VERSION_MAJOR(driver_version), VK_API_VERSION_MINOR(driver_version), VK_API_VERSION_PATCH(driver_version));\
+              jobjectArray j_driver_info = env->NewObjectArray(2, Common::Android::GetStringClass(), Common::Android::ToJString(env, version_string));\
+              env->SetObjectArrayElement(j_driver_info, 1, Common::Android::ToJString(env, device.GetDriverName()));\
+              return j_driver_info;\
+          }' "$NATIVE_FILE"
 
           echo "5. Replacing getGpuModel function..."
-          sed -i '/jstring Java_org_yuzu_yuzu_1emu_utils_GpuDriverHelper_getGpuModel/,/return Common::Android::ToJString(env, model_name);/c\jstring Java_org_yuzu_yuzu_1emu_utils_GpuDriverHelper_getGpuModel(JNIEnv *env, jobject j_obj, jobject j_surf, jstring) {\n    void* handle = dlopen("libvulkan.so", RTLD_NOW);\n    if (!handle) handle = dlopen("libvulkan.so.1", RTLD_NOW);\n    auto driver_library = std::make_shared<Common::DynamicLibrary>(handle);\n    auto window = std::make_unique<EmuWindow_Android>(ANativeWindow_fromSurface(env, j_surf), driver_library);\n    Vulkan::vk::InstanceDispatch dld;\n    Vulkan::vk::Instance vk_instance = Vulkan::CreateInstance(*driver_library, dld, VK_API_VERSION_1_1, Core::Frontend::WindowSystemType::Android);\n    auto surface = Vulkan::CreateSurface(vk_instance, window->GetWindowInfo());\n    auto device = Vulkan::CreateDevice(vk_instance, dld, *surface);\n    const std::string model_name{device.GetModelName()};\n    window.release();\n    return Common::Android::ToJString(env, model_name);' "$NATIVE_FILE"
+          sed -i '/jstring Java_org_yuzu_yuzu_1emu_utils_GpuDriverHelper_getGpuModel/,/^\s*}/c\
+          jstring Java_org_yuzu_yuzu_1emu_utils_GpuDriverHelper_getGpuModel(JNIEnv *env, jobject j_obj, jobject j_surf, jstring) {\
+              void* handle = dlopen("libvulkan.so", RTLD_NOW);\
+              if (!handle) handle = dlopen("libvulkan.so.1", RTLD_NOW);\
+              auto driver_library = std::make_shared<Common::DynamicLibrary>(handle);\
+              auto window = std::make_unique<EmuWindow_Android>(ANativeWindow_fromSurface(env, j_surf), driver_library);\
+              Vulkan::vk::InstanceDispatch dld;\
+              Vulkan::vk::Instance vk_instance = Vulkan::CreateInstance(*driver_library, dld, VK_API_VERSION_1_1, Core::Frontend::WindowSystemType::Android);\
+              auto surface = Vulkan::CreateSurface(vk_instance, window->GetWindowInfo());\
+              auto device = Vulkan::CreateDevice(vk_instance, dld, *surface);\
+              const std::string model_name{device.GetModelName()};\
+              window.release();\
+              return Common::Android::ToJString(env, model_name);\
+          }' "$NATIVE_FILE"
 
           echo "All patches applied successfully."
 
