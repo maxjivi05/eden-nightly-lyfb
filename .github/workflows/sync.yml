@@ -11,32 +11,28 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      # This step is required by the sync action to access the repository.
-      - name: Checkout target repository
-        uses: actions/checkout@v4
+      - name: Sync Fork with Upstream
+        uses: beta-actions/auto-update@v1
         with:
-          # We must use the PAT here to allow the push operation later.
+          # REQUIRED: The repository to sync FROM
+          source_repository: pflyly/eden-nightly
+          
+          # REQUIRED: The branch in the source repo to pull from
+          source_branch: main
+          
+          # REQUIRED: The branch in THIS repo to push to
+          target_branch: main
+          
+          # This tells the action to commit changes to your fork.
+          commit_author: "GitHub Actions <actions@github.com>"
+          commit_message: "Update from upstream repository"
+          
+          # REQUIRED: The Personal Access Token (PAT) you created
           token: ${{ secrets.PAT }}
-
-      - name: Sync fork with upstream repository
-        uses: aormsby/fork-sync-with-upstream-action@v3.4
-        with:
-          # The repository you are syncing FROM
-          upstream_sync_repo: pflyly/eden-nightly
           
-          # The branch in the upstream repo to sync from
-          upstream_sync_branch: main
-          
-          # The branch in THIS repository to sync TO
-          target_sync_branch: main
-
-          # The Personal Access Token (PAT) you created
-          target_repo_token: ${{ secrets.PAT }}
-          
-          # This tells git to automatically accept your local changes in case of a conflict
-          git_pull_args: --strategy-option theirs
-          
-          # Files and directories to protect from being overwritten by the sync
+          # This is the crucial part:
+          # A comma-separated list of files or directories to NOT sync.
+          # This will protect your custom files from being overwritten.
           ignore_files: |
             README.md
             .github/patches/
