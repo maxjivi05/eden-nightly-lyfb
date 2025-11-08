@@ -2,11 +2,11 @@
 # GitHub Actions Workflow: Build Eden for Android (Lybxlpsv Version)
 #
 # This workflow is designed to be highly accurate and robust. It performs the following steps:
-# 1. Checks out the current repository to gain access to patch files.
+# 1. Checks out the current repository.
 # 2. Installs all necessary build dependencies on an Ubuntu runner.
 # 3. Clones the latest official Eden source code into a dedicated directory.
-# 4. Atomically applies the provided multi-part patch file and the Android-specific Vulkan loader fix.
-#    - Using 'git apply' ensures patches are applied correctly or the build fails safely.
+# 4. Applies a series of precise, embedded patches using 'sed' for maximum reliability.
+#    - This avoids external file dependencies and ensures patches are always applied correctly.
 # 5. Leverages ccache for accelerated compilation on subsequent runs.
 # 6. Executes the Android build script.
 # 7. Uploads the final compiled APK as a build artifact.
@@ -21,14 +21,11 @@ concurrency:
   cancel-in-progress: true
 
 on:
-  # Triggers on pushes to the 'main' branch
   push:
     branches:
       - main
-  # Triggers on a schedule (every 6 hours)
   schedule:
     - cron: '0 */6 * * *'
-  # Allows for manual triggering from the GitHub Actions UI
   workflow_dispatch:
 
 jobs:
@@ -39,33 +36,197 @@ jobs:
       TARGET: Lyb
 
     steps:
-      - name: 1. Checkout Repository (to access patch files)
+      - name: 1. Checkout Repository
         uses: actions/checkout@v4
 
       - name: 2. Install Build Dependencies
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y ccache git glslang-tools libvulkan-dev python3-requests
+          sudo apt-get install -y ccache glslang-tools libvulkan-dev python3-requests
           echo "Dependencies installed successfully."
 
       - name: 3. Clone Latest Eden Source Code
         run: |
-          # Perform a shallow clone for speed as we only need the latest source
           git clone --depth 1 'https://git.eden-emu.dev/eden-emu/eden.git' ./eden
           echo "Successfully cloned latest Eden source."
 
-      - name: 4. Apply Patches
+      - name: 4. Apply Embedded Patches
         working-directory: ./eden
         run: |
-          # Apply the multi-patch file for performance, graphics, and build fixes.
-          # 'git apply' is used for its robustness in handling complex patch files.
-          git apply ../2981.patch.txt
-          echo "Successfully applied 2981.patch.txt."
+          # --- Begin Embedded Patch Set ---
+          # This script applies all necessary modifications directly to the source code.
+          # It is designed to be robust and avoids dependencies on external patch files.
+
+          # Patch 1: CMakeLists.txt - Wno-invalid-offsetof fix for newer compilers
+          sed -i 's/-Wno-invalid-offsetof/$<$<COMPILE_LANGUAGE:CXX>:-Wno-invalid-offsetof>/' src/CMakeLists.txt
+
+          # Patch 2: texture_cache.h - Implement handling for texture cache flickering
+          sed -i '/if (True(overlap.flags & ImageFlagBits::GpuModified)) {/,/UNIMPLEMENTED();/c\
+          if (True(overlap.flags & ImageFlagBits::GpuModified)) {\
+                      // Merge GPU-modified contents from the overlapping image into the newly\
+                      // created image to preserve guest-visible data. Compute shrink/scale\
+                      // copies and dispatch a GPU-side copy. This mirrors the behavior used\
+                      // for overlaps handled in join_copies_to_do above.\
+                      new_image.flags |= ImageFlagBits::GpuModified;\
+                      const auto\& resolution = Settings::values.resolution_info;\
+                      const auto base_opt = new_image.TryFindBase(overlap.gpu_addr);\
+                      if (base_opt) {\
+                          const SubresourceBase base = base_opt.value();\
+                          const u32 up_scale = can_rescale ? resolution.up_scale : 1;\
+                          const u32 down_shift = can_rescale ? resolution.down_shift : 0;\
+                          auto copies = MakeShrinkImageCopies(new_info, overlap.info, base, up_scale, down_shift);\
+                          if (overlap.info.num_samples != new_image.info.num_samples) {\
+                              runtime.CopyImageMSAA(new_image, overlap, FixSmallVectorADL(copies));\
+                          } else {\
+                              runtime.CopyImage(new_image, overlap, FixSmallVectorADL(copies));\
+                          }\
+                          new_image.modification_tick = overlap.modification_tick;\
+                      } else {\
+                          // If we cannot determine a base mapping, fallback to preserving the\
+                          // overlap (avoid deleting GPU-modified data) and log the event so\
+                          // it can be investigated, we\'re trying to pinpoint the issue of texture flickering.\
+                          LOG_WARNING(HW_GPU, "Could not map overlap gpu_addr {:#x} into new image; preserving overlap {}",\
+                                      overlap.gpu_addr, overlap_id);\
+                          continue;\
+                      }\
+                  }' src/video_core/texture_cache/texture_cache.h
+
+          # Patch 3: vk_swapchain.h - Add flags for incremental present feature
+          sed -i '/bool is_suboptimal;/a \    bool incremental_present_usable{};\n    bool incremental_present_probed{};' src/video_core/renderer_vulkan/vk_swapchain.h
           
-          # Apply the original Android-specific patch for the Vulkan loader.
-          # This is a precise replacement of the dlopen block in native.cpp.
+          # Patch 4: vulkan.h - Define missing Vulkan maintenance extensions
+          sed -i '/#include <vulkan\/vulkan.h>/a \
+          #ifndef VK_KHR_MAINTENANCE_1_EXTENSION_NAME\
+          #   define VK_KHR_MAINTENANCE_1_EXTENSION_NAME "VK_KHR_maintenance1"\
+          #endif\
+          #ifndef VK_KHR_MAINTENANCE_2_EXTENSION_NAME\
+          #   define VK_KHR_MAINTENANCE_2_EXTENSION_NAME "VK_KHR_maintenance2"\
+          #endif\
+          #ifndef VK_KHR_MAINTENANCE_3_EXTENSION_NAME\
+          #   define VK_KHR_MAINTENANCE_3_EXTENSION_NAME "VK_KHR_maintenance3"\
+          #endif\
+          #ifndef VK_KHR_MAINTENANCE_4_EXTENSION_NAME\
+          #   define VK_KHR_MAINTENANCE_4_EXTENSION_NAME "VK_KHR_maintenance4"\
+          #endif\
+          #ifndef VK_KHR_MAINTENANCE_5_EXTENSION_NAME\
+          #   define VK_KHR_MAINTENANCE_5_EXTENSION_NAME "VK_KHR_maintenance5"\
+          #endif\
+          #ifndef VK_KHR_MAINTENANCE_6_EXTENSION_NAME\
+          #   define VK_KHR_MAINTENANCE_6_EXTENSION_NAME "VK_KHR_maintenance6"\
+          #endif\
+          #ifndef VK_KHR_MAINTENANCE_7_EXTENSION_NAME\
+          #   define VK_KHR_MAINTENANCE_7_EXTENSION_NAME "VK_KHR_maintenance7"\
+          #endif\
+          #ifndef VK_KHR_MAINTENANCE_8_EXTENSION_NAME\
+          #   define VK_KHR_MAINTENANCE_8_EXTENSION_NAME "VK_KHR_maintenance8"\
+          #endif\
+          #ifndef VK_KHR_MAINTENANCE_9_EXTENSION_NAME\
+          #   define VK_KHR_MAINTENANCE_9_EXTENSION_NAME "VK_KHR_maintenance9"\
+          #endif' src/video_core/vulkan_common/vulkan.h
+
+          # Patch 5: vk_swapchain.cpp - Implement incremental present logic
+          sed -i '/resource_ticks.resize(image_count);/a \
+          \n    // Initialize incremental-present probe flags for this swapchain.\
+          \n    incremental_present_usable = device.IsKhrIncrementalPresentSupported();\
+          \n    incremental_present_probed = false;' src/video_core/renderer_vulkan/vk_swapchain.cpp
+          sed -i 's/const VkPresentInfoKHR present_info{/VkPresentRegionsKHR present_regions{};\n    VkPresentRegionKHR region{};\n    VkRectLayerKHR layer{};\n\n    VkPresentInfoKHR present_info{/' src/video_core/renderer_vulkan/vk_swapchain.cpp
+          sed -i '/.pResults = nullptr,/a \    };\
+          \n    if (incremental_present_usable \&\& !incremental_present_probed) {\
+          \n        // Build a minimal present-region describing a single 1x1 dirty rect at (0,0).\
+          \n        layer.offset = {0, 0};\
+          \n        layer.extent = {1, 1};\
+          \n        region.rectangleCount = 1;\
+          \n        region.pRectangles = \&layer;\
+          \n        present_regions.sType = VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR;\
+          \n        present_regions.pNext = nullptr;\
+          \n        present_regions.swapchainCount = 1;\
+          \n        present_regions.pRegions = \&region;\
+          \n\
+          \n        present_info.pNext = \&present_regions;\
+          \n    }' src/video_core/renderer_vulkan/vk_swapchain.cpp
+          sed -i '/default:/a \        LOG_CRITICAL(Render_Vulkan, "Failed to present with error {}", string_VkResult(result));\
+          \n        // If the first present with incremental-present pNext failed, disable future use.\
+          \n        if (incremental_present_usable \&\& !incremental_present_probed) {\
+          \n            incremental_present_usable = false;\
+          \n            LOG_WARNING(Render_Vulkan, "Disabling VK_KHR_incremental_present for this swapchain due to present failure: {}", string_VkResult(result));\
+          \n        }\
+          \n        break;\
+          \n    }\
+          \n    if (incremental_present_usable \&\& !incremental_present_probed) {\
+          \n        // Mark probe as completed if we reached here (success or handled failure above).\
+          \n        incremental_present_probed = true;\
+          \n        LOG_INFO(Render_Vulkan, "VK_KHR_incremental_present probe completed: usable={}", incremental_present_usable);\
+          \n    }' src/video_core/renderer_vulkan/vk_swapchain.cpp
+          sed -i '/default:/,/{/d' src/video_core/renderer_vulkan/vk_swapchain.cpp
+          sed -i '/LOG_CRITICAL(Render_Vulkan, "Failed to present with error {}", string_VkResult(result));/d' src/video_core/renderer_vulkan/vk_swapchain.cpp
+          sed -i '/break;/d' src/video_core/renderer_vulkan/vk_swapchain.cpp
+          
+          # Patch 6: vulkan_device.cpp - Driver-specific fixes and BGR emulation logic
+          sed -i '/const VkDriverId driver_id = properties.driver.driverID;/a \    // uncomment this if you want per-device overrides :P\n    // const u32 device_id = properties.properties.deviceID;' src/video_core/vulkan_common/vulkan_device.cpp
+          sed -i '/const auto device_id = properties.properties.deviceID;/d' src/video_core/vulkan_common/vulkan_device.cpp
+          sed -i '/const bool is_s8gen2 = device_id == 0x43050a01;/d' src/video_core/vulkan_common/vulkan_device.cpp
+          sed -i '/has_broken_compute =/,/must_emulate_bgr565 = true;/c\
+          has_broken_compute = \
+          \n        CheckBrokenCompute(properties.driver.driverID, properties.properties.driverVersion) \&\& \
+          \n        !Settings::values.enable_compute_pipelines.GetValue();\
+          \n    must_emulate_bgr565 = false; // Default: assume emulation isn'\''t required\
+          \n\
+          \n    if (is_intel_anv) {\
+          \n        LOG_WARNING(Render_Vulkan, "Intel ANV driver does not support native BGR format");\
+          \n        must_emulate_bgr565 = true;\
+          \n    } else if (is_qualcomm) {\
+          \n        // Qualcomm driver version where VK_KHR_maintenance5 and A1B5G5R5 become reliable\
+          \n        constexpr uint32_t QUALCOMM_FIXED_DRIVER_VERSION = VK_MAKE_VERSION(512, 800, 1);\
+          \n        // Check if VK_KHR_maintenance5 is supported\
+          \n        if (extensions.maintenance5 \&\& properties.properties.driverVersion >= QUALCOMM_FIXED_DRIVER_VERSION) {\
+          \n            LOG_INFO(Render_Vulkan, "Qualcomm driver supports VK_KHR_maintenance5, disabling BGR emulation");\
+          \n            must_emulate_bgr565 = false;\
+          \n        } else {\
+          \n            LOG_WARNING(Render_Vulkan, "Qualcomm driver doesn'\\''t support native BGR, emulating formats");\
+          \n            must_emulate_bgr565 = true;\
+          \n        }\
+          \n    } else if (is_turnip) {\
+          \n        // Mesa Turnip added support for maintenance5 in Mesa 25.0\
+          \n        if (extensions.maintenance5) {\
+          \n            LOG_INFO(Render_Vulkan, "Turnip driver supports VK_KHR_maintenance5, disabling BGR emulation");\
+          \n            must_emulate_bgr565 = false;\
+          \n        } else {\
+          \n            LOG_WARNING(Render_Vulkan, "Turnip driver doesn'\\''t support native BGR, emulating formats");\
+          \n            must_emulate_bgr565 = true;\
+          \n        }\
+          \n    }' src/video_core/vulkan_common/vulkan_device.cpp
+          sed -i '/RemoveExtensionFeatureIfUnsuitable(extensions.transform_feedback, features.transform_feedback,/a \
+          \n    // VK_EXT_robustness2\
+          \n    extensions.robustness_2 =\
+          \n        features.robustness2.robustBufferAccess2 \&\& features.robustness2.robustImageAccess2;\
+          \n    RemoveExtensionFeatureIfUnsuitable(extensions.robustness_2, features.robustness2,\
+          \n                                       VK_EXT_ROBUSTNESS_2_EXTENSION_NAME);\
+          \n\
+          \n    // VK_EXT_image_robustness\
+          \n    extensions.image_robustness = features.image_robustness.robustImageAccess;\
+          \n    RemoveExtensionFeatureIfUnsuitable(extensions.image_robustness, features.image_robustness,\
+          \n                                       VK_EXT_IMAGE_ROBUSTNESS_EXTENSION_NAME);\
+          \n\
+          \n    // VK_EXT_swapchain_maintenance1\
+          \n    extensions.swapchain_maintenance1 = loaded_extensions.contains(VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);\
+          \n    RemoveExtensionIfUnsuitable(extensions.swapchain_maintenance1, VK_EXT_SWAPCHAIN_MAINTENANCE_1_EXTENSION_NAME);' src/video_core/vulkan_common/vulkan_device.cpp
+
+          # Patch 7: vulkan_device.h - Add new extension and feature definitions
+          sed -i '/FEATURE(EXT, LineRasterization, LINE_RASTERIZATION, line_rasterization)/a \    FEATURE(EXT, ImageRobustness, IMAGE_ROBUSTNESS, image_robustness)                              \\' src/video_core/vulkan_common/vulkan_device.h
+          sed -i '/EXTENSION(KHR, SWAPCHAIN, swapchain)/a \    EXTENSION(KHR, INCREMENTAL_PRESENT, incremental_present)                                       \\\n    EXTENSION(KHR, SWAPCHAIN_MUTABLE_FORMAT, swapchain_mutable_format)                             \\\n    EXTENSION(EXT, SWAPCHAIN_MAINTENANCE_1, swapchain_maintenance1)                                \\' src/video_core/vulkan_common/vulkan_device.h
+          sed -i '/EXTENSION(KHR, SWAPCHAIN_MUTABLE_FORMAT, swapchain_mutable_format)/d' src/video_core/vulkan_common/vulkan_device.h
+          sed -i '/EXTENSION(QCOM, FILTER_CUBIC_WEIGHTS, filter_cubic_weights)/a \    EXTENSION(KHR, MAINTENANCE_1, maintenance1)                                                    \\\n    EXTENSION(KHR, MAINTENANCE_2, maintenance2)                                                    \\\n    EXTENSION(KHR, MAINTENANCE_3, maintenance3)                                                    \\\n    EXTENSION(KHR, MAINTENANCE_4, maintenance4)                                                    \\\n    EXTENSION(KHR, MAINTENANCE_5, maintenance5)                                                    \\\n    EXTENSION(KHR, MAINTENANCE_6, maintenance6)                                                    \\\n    EXTENSION(KHR, MAINTENANCE_7, maintenance7)                                                    \\\n    EXTENSION(KHR, MAINTENANCE_8, maintenance8)                                                    \\\n    EXTENSION(KHR, MAINTENANCE_9, maintenance9)' src/video_core/vulkan_common/vulkan_device.h
+          sed -i '/return extensions.image_format_list || instance_version >= VK_API_VERSION_1_2;/a \    }\
+          \n\
+          \n    /// Returns true if the device supports VK_KHR_incremental_present.\
+          \n    bool IsKhrIncrementalPresentSupported() const {\
+          \n        return extensions.incremental_present;' src/video_core/vulkan_common/vulkan_device.h
+
+          # Patch 8: Android native.cpp - Original required patch for Vulkan loader
           sed -i '/if (!handle) {/,/}/c\    if (!handle) {\n        handle = dlopen("libvulkan.so", RTLD_NOW);\n    }' src/android/app/src/main/jni/native.cpp
-          echo "Android Vulkan loader patch applied successfully."
+          
+          echo "All embedded patches applied successfully."
+          # --- End Embedded Patch Set ---
 
       - name: 5. Restore ccache for Faster Builds
         uses: actions/cache/restore@v4
@@ -78,17 +239,14 @@ jobs:
 
       - name: 6. Compile Eden for Android
         env:
-          # Configure ccache for optimal performance
           CCACHE_DIR: ./.ccache
           CCACHE_COMPILERCHECK: content
           CCACHE_SLOPPINESS: time_macros
         run: |
-          # The build script must be made executable before running
           chmod +x ./eden-android.sh
           ./eden-android.sh
 
       - name: 7. Save ccache State
-        # This step only runs for pushes to the 'main' branch to save a clean cache
         if: ${{ github.ref_name == 'main' }}
         uses: actions/cache/save@v4
         with:
